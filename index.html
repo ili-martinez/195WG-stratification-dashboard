@@ -50,20 +50,14 @@ header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
 .hdr-text h1 em{color:var(--gold);font-style:normal}
 .hdr-text .sub{font-size:11px;color:var(--steel);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px}
 .data-controls{display:flex;flex-direction:column;align-items:flex-end;gap:8px;align-self:center;min-width:260px}
-.load-btn{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;
-  text-transform:uppercase;background:var(--gold);color:var(--navy-dark);border:none;border-radius:5px;
-  padding:10px 20px;cursor:pointer;transition:.2s;width:100%}
-.load-btn:hover{background:var(--gold-lt)}
-.load-btn:disabled{background:var(--steel);cursor:not-allowed;opacity:.6}
+.upload-wrap{display:flex;flex-direction:column;gap:6px;width:100%}
+.upload-wrap label.upload-btn{font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;
+  letter-spacing:1px;text-transform:uppercase;background:var(--gold);color:var(--navy-dark);
+  border:none;border-radius:5px;padding:10px 20px;cursor:pointer;transition:.2s;
+  text-align:center;display:flex;align-items:center;justify-content:center;gap:8px}
+.upload-wrap label.upload-btn:hover{background:var(--gold-lt)}
 .load-status{font-size:11px;color:var(--steel);letter-spacing:.5px;text-align:right}
 .load-status.ok{color:var(--green)}.load-status.err{color:var(--crimson)}
-.divider{font-size:10px;color:var(--steel);text-align:center;letter-spacing:1px}
-.upload-fallback{display:none;flex-direction:column;gap:6px;width:100%}
-.upload-fallback label{font-family:'Barlow Condensed',sans-serif;font-size:11px;font-weight:700;
-  letter-spacing:1px;text-transform:uppercase;color:var(--steel);text-align:center;
-  border:1px dashed rgba(240,192,48,.3);border-radius:4px;padding:7px 12px;
-  cursor:pointer;transition:.2s}
-.upload-fallback label:hover{border-color:var(--gold);color:var(--gold)}
 
 /* FILTER BAR */
 .filter-bar{background:var(--navy-mid);border-bottom:1px solid var(--border);
@@ -220,12 +214,10 @@ th.asc::after,th.desc::after{margin-left:2px;font-size:10px}
     </div>
   </div>
   <div class="data-controls">
-    <button class="load-btn" id="loadBtn">&#8635; Refresh Data</button>
-    <div class="load-status" id="loadStatus">Loading data from SharePoint...</div>
-    <div class="divider">— or —</div>
-    <div class="upload-fallback" id="uploadFallback">
-      <label for="fileInput">&#128194; Upload .xlsx manually</label>
+    <div class="upload-wrap">
+      <label class="upload-btn" for="fileInput">&#128194; Upload Excel File</label>
       <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+      <div class="load-status" id="loadStatus">No file loaded</div>
     </div>
   </div>
 </header>
@@ -249,7 +241,7 @@ th.asc::after,th.desc::after{margin-left:2px;font-size:10px}
   <div class="empty">
     <div class="ico">📋</div>
     <h2>No Data Loaded</h2>
-    <p>Upload your Microsoft Forms Excel export to populate the dashboard.</p>
+    <p>Upload your Microsoft Forms Excel export using the button above to populate the dashboard.</p>
   </div>
 </main>
 
@@ -279,8 +271,6 @@ const EPB_COLS = [
 let charts = {};
 
 // DATA SOURCE
-const SHAREPOINT_URL = 'https://usaf.dps.mil/teams/195thWingChiefsGroup/Shared%20Documents/Apps/Microsoft%20Forms%20Fairfax/Evaluation%20StratificationRubric(1-1).xlsx';
-const loadBtn    = document.getElementById('loadBtn');
 const loadStatus = document.getElementById('loadStatus');
 const fi         = document.getElementById('fileInput');
 
@@ -289,44 +279,25 @@ function setStatus(msg, type) {
   loadStatus.className = 'load-status' + (type ? ' ' + type : '');
 }
 
-async function fetchFromSharePoint() {
-  loadBtn.disabled = true;
-  setStatus('Fetching from SharePoint...');
-  try {
-    const resp = await fetch(SHAREPOINT_URL, { credentials: 'include' });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const buf = await resp.arrayBuffer();
-    const wb  = XLSX.read(new Uint8Array(buf), { type: 'array', cellDates: true });
-    const ws  = wb.Sheets[wb.SheetNames[0]];
-    processData(XLSX.utils.sheet_to_json(ws, { defval: '' }));
-    const now = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-    setStatus('Last updated: ' + now, 'ok');
-    document.getElementById('uploadFallback').style.display = 'none';
-  } catch(err) {
-    console.error('SharePoint fetch failed:', err);
-    setStatus('Auto-load failed. Use manual upload below.', 'err');
-    document.getElementById('uploadFallback').style.display = 'flex';
-  }
-  loadBtn.disabled = false;
-}
-
-loadBtn.addEventListener('click', fetchFromSharePoint);
-
 fi.addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+  setStatus('Loading: ' + file.name);
   const reader = new FileReader();
   reader.onload = ev => {
-    const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    processData(XLSX.utils.sheet_to_json(ws, { defval: '' }));
-    setStatus('Loaded: ' + file.name, 'ok');
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      processData(XLSX.utils.sheet_to_json(ws, { defval: '' }));
+      setStatus('Loaded: ' + file.name, 'ok');
+    } catch(err) {
+      console.error('File parse failed:', err);
+      setStatus('Failed to parse file. Check format.', 'err');
+    }
   };
+  reader.onerror = () => setStatus('Failed to read file.', 'err');
   reader.readAsArrayBuffer(file);
 });
-
-// Auto-fetch on page load
-fetchFromSharePoint();
 
 // PROCESS
 function processData(raw) {
